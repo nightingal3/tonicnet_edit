@@ -1,6 +1,7 @@
 import sys
 from preprocessing.nn_dataset import bach_chorales_classic
-from train.train_nn import train_TonicNet, TonicNet_lr_finder, TonicNet_sanity_test
+from preprocessing.nn_dataset_orig import bach_chorales_classic_full
+from train.train_nn import train_TonicNet, TonicNet_lr_finder, TonicNet_sanity_test, train_Transformer
 from train.train_nn import CrossEntropyTimeDistributedLoss
 from train.models import TonicNet
 from eval.utils import plot_loss_acc_curves, indices_to_stream, smooth_rhythm
@@ -9,8 +10,11 @@ from eval.sample import sample_TonicNet_random
 
 if len(sys.argv) > 1:
     if sys.argv[1] in ['--train', '-t']:
-        train_TonicNet(3000, shuffle_batches=1, train_emb_freq=1, load_path='')
-
+        train_TonicNet(60, shuffle_batches=False, train_emb_freq=1, load_path='')
+    if sys.argv[1] in ["--train-transformer", "-tt"]:
+        train_Transformer(30, shuffle_batches=True)
+    elif sys.argv[1] in ["--train-diverse", "-tr"]:
+        raise NotImplementedError
     elif sys.argv[1] in ['--plot', '-p']:
         plot_loss_acc_curves()
 
@@ -41,7 +45,16 @@ if len(sys.argv) > 1:
         else:
             for x, y, p, i, c in bach_chorales_classic('save', transpose=True):
                 continue
-
+    elif sys.argv[1] in ['--gen_dataset_full', '-gdf']:
+        if len(sys.argv) > 2 and sys.argv[2] == '--jsf':
+            for x, y, p, i, c in bach_chorales_classic_full('save', transpose=True, jsf_aug='all'):
+                continue
+        elif len(sys.argv) > 2 and sys.argv[2] == '--jsf_only':
+            for x, y, p, i, c in bach_chorales_classic_full('save', transpose=True, jsf_aug='only'):
+                continue
+        else:
+            for x, y, p, i, c in bach_chorales_classic_full('save', transpose=True):
+                continue
     else:
         print("")
         print("TonicNet (Training on Ordered Notation Including Chords)")

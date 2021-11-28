@@ -1,3 +1,4 @@
+from random import shuffle
 import time, os
 import math
 import matplotlib.pyplot as plt
@@ -5,10 +6,12 @@ from torch import save, set_grad_enabled, sum, max
 from torch import optim, cuda, load, device
 from torch.nn.utils import clip_grad_norm_
 from preprocessing.nn_dataset import get_data_set, TOTAL_BATCHES, TRAIN_BATCHES, N_TOKENS
+from preprocessing.nn_dataset_orig import get_data_set_full, TOTAL_BATCHES_FULL, TRAIN_BATCHES_FULL
 from train.models import CrossEntropyTimeDistributedLoss
 from train.models import TonicNet, Transformer_Model
 from train.external import RAdam, Lookahead, OneCycleLR
-
+import pickle
+import pdb
 """
 File containing functions which train various neural networks defined in train.models
 """
@@ -76,15 +79,16 @@ def train_TonicNet(epochs,
         max_lr = 0.5
 
     step_size = 3 * min(TRAIN_BATCHES, num_batches)
-
+    #step_size = 5676
+    print("TOTAL BATCHES", TOTAL_BATCHES)
+    print("TRAIN BATCHES", TRAIN_BATCHES)
     if sanity_test:
         base_optim = RAdam(model.parameters(), lr=base_lr)
         optimiser = Lookahead(base_optim, k=5, alpha=0.5)
     else:
         optimiser = optim.SGD(model.parameters(), base_lr)
     criterion = CrossEntropyTimeDistributedLoss()
-
-    print(criterion)
+    #criterion = MMIAntiLMLoss(lambd=1e-5)
 
     print(f"min lr: {base_lr}, max_lr: {max_lr}, stepsize: {step_size}")
 
@@ -113,6 +117,7 @@ def train_TonicNet(epochs,
     else:
         phases = TRAIN_ONLY_PHASES
 
+    val_loss_per_epoch = []
     for epoch in range(epochs):
         start = time.time()
         pr_interval = 50
@@ -123,20 +128,26 @@ def train_TonicNet(epochs,
 
             count = 0
             batch_count = 0
+            missing_count = 0
             loss_epoch = 0
             running_accuray = 0.0
+            running_acc_missing = 0.0
+            running_batch_missing_count = 0
             running_batch_count = 0
             print_loss_batch = 0  # Reset on print
             print_acc_batch = 0  # Reset on print
+            print_acc_batch_missing = 0
 
             print(f'\n\tPHASE: {phase}')
 
             if phase == 'train':
                 model.train()  # Set model to training mode
+                dataset = get_data_set(phase, shuffle_batches=shuffle_batches, return_I=1)
             else:
                 model.eval()  # Set model to evaluate mode
+                dataset = get_data_set(phase, shuffle_batches=shuffle_batches, return_I=1)
 
-            for x, y, psx, i, c in get_data_set(phase, shuffle_batches=shuffle_batches, return_I=1):
+            for ind, (x, y, psx, i, c, m) in enumerate(dataset):
                 model.zero_grad()
 
                 if phase == 'train' and (epoch > -1 or load_path != ''):
@@ -147,10 +158,25 @@ def train_TonicNet(epochs,
 
                 else:
                     train_emb = False
-
+                
                 with set_grad_enabled(phase == 'train'):
+                    #pdb.set_trace()
+                    print("ind:", ind)
+                    print("x shape: ", x.shape)
+                    print("i shape: ", i.shape)
+                    print("y shape: ", y.shape)
+                    print("train emb", train_emb)
+                    
                     y_hat = model(x, z=i, train_embedding=train_emb)
                     _, preds = max(y_hat, 2)
+                    # Make both y_hat and y equal on the masked parts to not add to the loss
+                    zeroed_inds = (m == 0).nonzero().squeeze()
+                    #y_hat_masked = y_hat.detach().clone()
+                    #y_hat_masked[:, list(zeroed_inds), :] = 0
+                    y_hat[:, list(zeroed_inds), :] = 0
+                    #y_masked = y.detach().clone()
+                    y[:, [i + 1 for i in list(zeroed_inds)]] = 0
+                    #y_masked[:, [i + 1 for i in list(zeroed_inds)]] = 0 # mask has to be right shifted for y
                     loss = criterion(y_hat, y,)
 
                 if phase == 'train':
@@ -164,7 +190,14 @@ def train_TonicNet(epochs,
                 print_loss_batch += loss.item()
                 running_accuray += sum(preds == y)
                 print_acc_batch += sum(preds == y)
-
+                # Return separate accuracy for just the missing voice
+                #missing_inds = (m == 0).nonzero().squeeze()
+                #preds_missing = preds[:, list(missing_inds)]
+                #y_missing = y[:, list(missing_inds)]
+                #running_acc_missing += sum(preds_missing == y_missing)
+                #print_acc_batch_missing += sum(preds_missing == y_missing)
+                #running_batch_missing_count += missing_inds.shape[0]
+                #missing_count += missing_inds.shape[0]
                 count += 1
                 batch_count += x.shape[1]
                 running_batch_count += x.shape[1]
@@ -186,9 +219,11 @@ def train_TonicNet(epochs,
                 if count % pr_interval == 0:
                     ave_loss = print_loss_batch/pr_interval
                     ave_acc = 100 * print_acc_batch.float()/running_batch_count
+                    #ave_acc_missing = 100 * print_acc_batch_missing.float()/running_batch_missing_count
                     print_acc_batch = 0
+                    #print_acc_batch_missing = 0
                     running_batch_count = 0
-                    print('\t\t[%d] loss: %.3f, acc: %.3f' % (count, ave_loss, ave_acc))
+                    #print('\t\t[%d] loss: %.3f, acc: %.3f, acc missing: %.3f' % (count, ave_loss, ave_acc, ave_acc_missing))
                     print_loss_batch = 0
 
                 if count == num_batches:
@@ -197,19 +232,24 @@ def train_TonicNet(epochs,
             # calculate loss and accuracy for phase
             ave_loss_epoch = loss_epoch/count
             epoch_acc = 100 * running_accuray.float() / batch_count
-            print('\tfinished %s phase [%d] loss: %.3f, acc: %.3f' % (phase, epoch + 1, ave_loss_epoch, epoch_acc))
+            #epoch_acc_missing = 100 * running_acc_missing.float() / missing_count
+            #print('\tfinished %s phase [%d] loss: %.3f, acc: %.3f, missing acc: %.3f' % (phase, epoch + 1, ave_loss_epoch, epoch_acc, epoch_acc_missing))
 
         print('\n\ttime:', __time_since(start), '\n')
 
         # save model when validation loss improves
+        val_loss_per_epoch.append(best_val_loss)
         if ave_loss_epoch < best_val_loss:
             best_val_loss = ave_loss_epoch
             print("\tNEW BEST LOSS: %.3f" % ave_loss_epoch, '\n')
 
             if save_model:
-                __save_model(epoch, ave_loss_epoch, model, "TonicNet", epoch_acc)
+                __save_model(epoch, ave_loss_epoch, model, "TonicNet_mmi", epoch_acc)
         else:
             print("\tLOSS DID NOT IMPROVE FROM %.3f" % best_val_loss, '\n')
+
+    with open("./train_loss.p", "wb") as f:
+        pickle.dump(val_loss_per_epoch, f)
 
     print("DONE")
     if lr_range_test:
@@ -275,7 +315,7 @@ def train_Transformer(epochs,
         max_lr = 0.3
 
     step_size = 3 * min(TRAIN_BATCHES, num_batches)
-
+    pdb.set_trace()
     if sanity_test:
         base_optim = RAdam(model.parameters(), lr=base_lr/100)
         optimiser = Lookahead(base_optim, k=5, alpha=0.5)
@@ -284,7 +324,7 @@ def train_Transformer(epochs,
     criterion = CrossEntropyTimeDistributedLoss()
 
     print(criterion)
-
+    
     print(f"min lr: {base_lr}, max_lr: {max_lr}, stepsize: {step_size}")
 
     if not sanity_test and not lr_range_test:
@@ -313,6 +353,7 @@ def train_Transformer(epochs,
     else:
         phases = TRAIN_ONLY_PHASES
 
+    val_loss_per_epoch = []
     for epoch in range(epochs):
         start = time.time()
         pr_interval = 50
@@ -334,10 +375,13 @@ def train_Transformer(epochs,
 
             if phase == 'train':
                 model.train()  # Set model to training mode
+                dataset = get_data_set(phase, shuffle_batches=shuffle_batches, return_I=1)
             else:
                 model.eval()  # Set model to evaluate mode
+                dataset = get_data_set_full(phase, shuffle_batches=shuffle_batches, return_I=1)
 
-            for x, y, psx, i, c in get_data_set(phase, shuffle_batches=shuffle_batches, return_I=1):
+
+            for x, y, psx, i, c in dataset:
 
                 Y = y
                 model.seq_len = x.shape[1]
@@ -407,6 +451,7 @@ def train_Transformer(epochs,
 
         print('\n\ttime:', __time_since(start), '\n')
 
+        val_loss_per_epoch.append(ave_loss_epoch)
         # save model when validation loss improves
         if ave_loss_epoch < best_val_loss:
             best_val_loss = ave_loss_epoch
@@ -416,6 +461,9 @@ def train_Transformer(epochs,
                 __save_model(epoch, ave_loss_epoch, model, "EncoReTransformer", epoch_acc)
         else:
             print("\tLOSS DID NOT IMPROVE FROM %.3f" % best_val_loss, '\n')
+
+    with open("./train_loss_transformer.p", "wb") as f:
+        pickle.dump(val_loss_per_epoch, f)
 
     print("DONE")
     if lr_range_test:
@@ -431,7 +479,7 @@ def __save_model(epoch, ave_loss_epoch, model, model_name, acc):
         test = os.listdir('eval')
 
         for item in test:
-            if item.endswith(".pt"):
+            if item.endswith(".pt") and model_name in item:
                 os.remove(os.path.join('eval', item))
 
         path_loss = round(ave_loss_epoch, 3)
@@ -455,3 +503,5 @@ def __as_minutes(s):
     m = math.floor(s / 60)
     s -= m * 60
     return '%dm %ds' % (m, s)
+
+

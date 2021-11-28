@@ -13,14 +13,14 @@ File containing functions to derive training data for neural networks
 CUDA = torch.cuda.is_available()
 
 if CUDA:
-    PATH = 'train/training_set/X_cuda'
+    PATH = 'train/training_set/X_cuda_complete'
 else:
-    PATH = 'train/training_set/X'
+    PATH = 'train/training_set/X_complete'
 if os.path.exists(PATH):
-    TRAIN_BATCHES = len(os.listdir(PATH))
+    TRAIN_BATCHES_FULL = len(os.listdir(PATH))
 else:
-    TRAIN_BATCHES = 0
-TOTAL_BATCHES = TRAIN_BATCHES + 76
+    TRAIN_BATCHES_FULL = 0
+TOTAL_BATCHES_FULL = TRAIN_BATCHES_FULL + 76
 
 MAX_SEQ = 2880
 N_PITCH = 48
@@ -28,7 +28,7 @@ N_CHORD = 50
 N_TOKENS = N_PITCH + N_CHORD
 
 
-def get_data_set(mode, shuffle_batches=True, return_I=False):
+def get_data_set_full(mode, shuffle_batches=True, return_I=False):
 
     if mode == 'train':
         parent_dir = 'train/training_set'
@@ -38,9 +38,9 @@ def get_data_set(mode, shuffle_batches=True, return_I=False):
         raise Exception("invalid mode passed to get_data_set() - options are 'train' and 'val'")
 
     if torch.cuda.is_available():
-        lst = os.listdir(f'{parent_dir}/X_cuda')
+        lst = os.listdir(f'{parent_dir}/X_cuda_complete')
     else:
-        lst = os.listdir(f'{parent_dir}/X')
+        lst = os.listdir(f'{parent_dir}/X_complete')
     try:
         lst.remove('.DS_Store')
     except:
@@ -51,29 +51,42 @@ def get_data_set(mode, shuffle_batches=True, return_I=False):
 
     for file_name in lst:
         if torch.cuda.is_available():
-            X = torch.load(f'{parent_dir}/X_cuda/{file_name}')
-            Y = torch.load(f'{parent_dir}/Y_cuda/{file_name}')
-            P = torch.load(f'{parent_dir}/P_cuda/{file_name}')
-            M = torch.load(f'{parent_dir}/M_cuda/{file_name}')
+            X = torch.load(f'{parent_dir}/X_cuda_complete/{file_name}')
+            Y = torch.load(f'{parent_dir}/Y_cuda_complete/{file_name}')
+            P = torch.load(f'{parent_dir}/P_cuda_complete/{file_name}')
             if return_I:
-                I = torch.load(f'{parent_dir}/I_cuda/{file_name}')
-                C = torch.load(f'{parent_dir}/C_cuda/{file_name}')
+                I = torch.load(f'{parent_dir}/I_cuda_complete/{file_name}')
+                C = torch.load(f'{parent_dir}/C_cuda_complete/{file_name}')
         else:
-            X = torch.load(f'{parent_dir}/X/{file_name}')
-            Y = torch.load(f'{parent_dir}/Y/{file_name}')
-            P = torch.load(f'{parent_dir}/P/{file_name}')
-            M = torch.load(f'{parent_dir}/M/{file_name}')
+            X = torch.load(f'{parent_dir}/X_complete/{file_name}')
+            Y = torch.load(f'{parent_dir}/Y_complete/{file_name}')
+            P = torch.load(f'{parent_dir}/P_complete/{file_name}')
             if return_I:
-                I = torch.load(f'{parent_dir}/I/{file_name}')
-                C = torch.load(f'{parent_dir}/C/{file_name}')
-
+                I = torch.load(f'{parent_dir}/I_complete/{file_name}')
+                C = torch.load(f'{parent_dir}/C_complete/{file_name}')
+        pdb.set_trace()
         if return_I:
-            yield X, Y, P, I, C, M
+            yield X, Y, P, I, C
         else:
-            yield X, Y, P, M
+            yield X, Y, P
 
+def get_data_set_tensors(mode, shuffle_batches=True, return_I=False):
+    print('Train')
+    X_train = torch.load('tensors/x_train.pt')
+    X_mask_train = torch.load('tensors/mask_train.pt')
+    y_train = torch.load('tensors/y_train.pt')
 
-def bach_chorales_classic(mode, transpose=False, maj_min=False, jsf_aug=None):
+    print('\nValid')
+    print(torch.load('tensors/x_valid.pt').shape)
+    print(torch.load('tensors/mask_valid.pt').shape)
+    print(torch.load('tensors/y_valid.pt').shape)
+
+    print('\nTest')
+    print(torch.load('tensors/x_test.pt').shape)
+    print(torch.load('tensors/mask_test.pt').shape)
+    print(torch.load('tensors/y_test.pt').shape)
+
+def bach_chorales_classic_full(mode, transpose=False, maj_min=False, jsf_aug=None):
 
     if maj_min and jsf_aug is not None:
         raise ValueError("maj_min and jsf_aug can not both be true")
@@ -88,27 +101,27 @@ def bach_chorales_classic(mode, transpose=False, maj_min=False, jsf_aug=None):
 
     for folder_name in ["training_set", "val_set"]:
         if torch.cuda.is_available():
+            print("cuda:")
             try:
-                os.makedirs(f'train/{folder_name}/X_cuda')
-                os.makedirs(f'train/{folder_name}/Y_cuda')
-                os.makedirs(f'train/{folder_name}/P_cuda')
-                os.makedirs(f'train/{folder_name}/I_cuda')
-                os.makedirs(f'train/{folder_name}/C_cuda')
-                os.makedirs(f'train/{folder_name}/M_cuda')
+                os.makedirs(f'train/{folder_name}/X_cuda_complete')
+                os.makedirs(f'train/{folder_name}/Y_cuda_complete')
+                os.makedirs(f'train/{folder_name}/P_cuda_complete')
+                os.makedirs(f'train/{folder_name}/I_cuda_complete')
+                os.makedirs(f'train/{folder_name}/C_cuda_complete')
             except:
                 pass
         else:
             try:
-                os.makedirs(f'train/{folder_name}/X')
-                os.makedirs(f'train/{folder_name}/Y')
-                os.makedirs(f'train/{folder_name}/P')
-                os.makedirs(f'train/{folder_name}/I')
-                os.makedirs(f'train/{folder_name}/C')
-                os.makedirs(f'train/{folder_name}/M')
+                os.makedirs(f'train/{folder_name}/X_complete')
+                os.makedirs(f'train/{folder_name}/Y_complete')
+                os.makedirs(f'train/{folder_name}/P_complete')
+                os.makedirs(f'train/{folder_name}/I_complete')
+                os.makedirs(f'train/{folder_name}/C_complete')
             except:
                 pass
 
     for phase in ['train', 'valid']:
+
         d = np.load('dataset_unprocessed/Jsb16thSeparated.npz', allow_pickle=True, encoding="latin1")
         train = (d[phase])
 
@@ -146,9 +159,7 @@ def bach_chorales_classic(mode, transpose=False, maj_min=False, jsf_aug=None):
                 transpositions = [int_m]
                 crds_pieces = [crd]
             else:
-                # Parts - soprano, alto, tenor, bass (don't zero out here for the sake of transpositions)
                 parts = [int_m[:, 0], int_m[:, 1], int_m[:, 2], int_m[:, 3]]
-
                 transpositions, tonics, crds_pieces = __np_perform_all_transpositions(parts, 0, crd)
 
                 if maj_min:
@@ -162,17 +173,13 @@ def bach_chorales_classic(mode, transpose=False, maj_min=False, jsf_aug=None):
                     crds_pieces += ms_crds
 
             kc = 0
-            # Mask out each voice line, and create separate copies for the different masked lines
-            voice_types = ["s", "b", "a", "t"]
 
-            for i, t in enumerate(transpositions):
-                masked_voice = voice_types[i % 4]                  
+            for t in transpositions:
+
                 crds_piece = crds_pieces[kc]
-                
+
                 _tokens = []
-                _tokens_masked = []
                 inst_ids = []
-                masked_voice_seq = []
                 c_class = []
 
                 current_s = ''
@@ -197,25 +204,12 @@ def bach_chorales_classic(mode, transpose=False, maj_min=False, jsf_aug=None):
                     b = 'Rest' if i[3] < 36 else str(i[3])
                     a = 'Rest' if i[1] < 36 else str(i[1])
                     t = 'Rest' if i[2] < 36 else str(i[2])
-                
-                    voices = {"s": s, "b": b, "a": a, "t": t}
-                    voice_inds = {"s": 0, "b": 3, "a": 1, "t": 2}
-                    # using 0 as the mask val
-                    voices = {v: note if v != masked_voice else 0 for v, note in voices.items()}
-                    s_m, b_m, a_m, t_m = voices["s"], voices["b"], voices["a"], voices["t"]
-
-                    # create mask to tell us which voice is missing
-                    masked_seq = [1, 1, 1, 1]
-                    masked_seq[voice_inds[masked_voice]] = 0
-                    masked_seq.insert(0, 1) # never mask out chord
 
                     c_val = crds_piece[timestep] + 48
                     timestep += 1
 
                     _tokens = _tokens + [c_val, s, b, a, t]
-                    _tokens_masked = _tokens_masked + [c_val, s_m, b_m, a_m, t_m]
                     c_class = c_class + [c_val]
-                    masked_voice_seq.extend(masked_seq)
 
                     if c_val == current_c:
                         c_count += 1
@@ -248,23 +242,18 @@ def bach_chorales_classic(mode, transpose=False, maj_min=False, jsf_aug=None):
                         current_t = t
 
                     inst_ids = inst_ids + [c_count, s_count, b_count, a_count, t_count]
-                
+
                 pos_ids = list(range(len(_tokens)))
+
                 kc += 1
                 _tokens.append('end')
-                _tokens_masked.append('end')
                 tokens = []
-                tokens_masked = []
                 try:
-                    for x, x_m in zip(_tokens, _tokens_masked):
+                    for x in _tokens:
                         if isinstance(x, str):
                             tokens.append(tokeniser[x])
                         else:
                             tokens.append(x)
-                        if isinstance(x_m, str):
-                            tokens_masked.append(tokeniser[x_m])
-                        else:
-                            tokens_masked.append(x_m)
                 except:
                     print("ERROR: tokenisation")
                     continue
@@ -277,8 +266,9 @@ def bach_chorales_classic(mode, transpose=False, maj_min=False, jsf_aug=None):
                 data_y = []
 
                 pos_x = []
+
                 for i in range(0, len(tokens) - SEQ_LEN, 1):
-                    t_seq_in = tokens_masked[i:i + SEQ_LEN]
+                    t_seq_in = tokens[i:i + SEQ_LEN]
                     t_seq_out = tokens[i + 1: i + 1 + SEQ_LEN]
                     data_x.append(t_seq_in)
                     data_y.append(t_seq_out)
@@ -292,7 +282,6 @@ def bach_chorales_classic(mode, transpose=False, maj_min=False, jsf_aug=None):
                 Y = torch.tensor(data_y)
                 P = torch.tensor(pos_x)
                 I = torch.tensor(inst_ids)
-                M = torch.tensor(masked_voice_seq)
                 C = torch.tensor(c_class)
 
                 set_folder = 'training_set'
@@ -302,23 +291,22 @@ def bach_chorales_classic(mode, transpose=False, maj_min=False, jsf_aug=None):
                 if mode == 'save':
 
                     if torch.cuda.is_available():
-                        torch.save(X.cuda(), f'train/{set_folder}/X_cuda/{count}.pt')
-                        torch.save(Y.cuda(), f'train/{set_folder}/Y_cuda/{count}.pt')
-                        torch.save(P.cuda(), f'train/{set_folder}/P_cuda/{count}.pt')
-                        torch.save(I.cuda(), f'train/{set_folder}/I_cuda/{count}.pt')
-                        torch.save(M.cuda(), f'train/{set_folder}/M_cuda/{count}.pt')
-                        torch.save(C.cuda(), f'train/{set_folder}/C_cuda/{count}.pt')
+                        torch.save(X.cuda(), f'train/{set_folder}/X_cuda_complete/{count}.pt')
+                        torch.save(Y.cuda(), f'train/{set_folder}/Y_cuda_complete/{count}.pt')
+                        torch.save(P.cuda(), f'train/{set_folder}/P_cuda_complete/{count}.pt')
+                        torch.save(I.cuda(), f'train/{set_folder}/I_cuda_complete/{count}.pt')
+                        torch.save(C.cuda(), f'train/{set_folder}/C_cuda_complete/{count}.pt')
                     else:
-                        torch.save(X, f'train/{set_folder}/X/{count}.pt')
-                        torch.save(Y, f'train/{set_folder}/Y/{count}.pt')
-                        torch.save(P, f'train/{set_folder}/P/{count}.pt')
-                        torch.save(I, f'train/{set_folder}/I/{count}.pt')
-                        torch.save(M, f'train/{set_folder}/M/{count}.pt')
-                        torch.save(C, f'train/{set_folder}/C/{count}.pt')
+                        torch.save(X, f'train/{set_folder}/X_complete/{count}.pt')
+                        torch.save(Y, f'train/{set_folder}/Y_complete/{count}.pt')
+                        torch.save(P, f'train/{set_folder}/P_complete/{count}.pt')
+                        torch.save(I, f'train/{set_folder}/I_complete/{count}.pt')
+                        torch.save(C, f'train/{set_folder}/C_complete/{count}.pt')
                     print("saved", count)
                 else:
                     print("processed", count)
                     yield X, Y, P, I, C
+
 
 def get_test_set_for_eval_classic(phase='test'):
 
